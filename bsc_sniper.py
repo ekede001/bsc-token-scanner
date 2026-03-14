@@ -1,6 +1,21 @@
 import time
 import requests
+import threading
 from web3 import Web3
+from flask import Flask
+
+# =========================
+# WEB SERVER FOR RENDER
+# =========================
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "BSC Scanner Running"
+
+def run_web():
+    app.run(host="0.0.0.0", port=10000)
 
 # =========================
 # CONFIGURATION
@@ -9,8 +24,8 @@ from web3 import Web3
 BSC_RPC = "https://bsc-dataseed.binance.org/"
 BSCSCAN_API = "G6P8MM29BFV4UCCG9V1NFNN7U2RJVK43GK"
 
-TELEGRAM_BOT_TOKEN = "7961152910:AAHCJajDisbV1ASLlIKWsqstSP83h3uD3Lc"
-TELEGRAM_CHAT_ID = "-1003723839327"
+TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"
 
 MIN_LIQUIDITY_USD = 1000
 MIN_MARKETCAP_USD = 30000
@@ -21,10 +36,17 @@ MIN_MARKETCAP_USD = 30000
 
 w3 = Web3(Web3.HTTPProvider(BSC_RPC))
 
-WBNB = Web3.to_checksum_address("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")
-USDT = Web3.to_checksum_address("0x55d398326f99059fF775485246999027B3197955")
+WBNB = Web3.to_checksum_address(
+    "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+)
 
-FACTORY = Web3.to_checksum_address("0xca143ce32fe78f1f7019d7d551a6402fc5350c73")
+USDT = Web3.to_checksum_address(
+    "0x55d398326f99059fF775485246999027B3197955"
+)
+
+FACTORY = Web3.to_checksum_address(
+    "0xca143ce32fe78f1f7019d7d551a6402fc5350c73"
+)
 
 FACTORY_ABI = [{
     "anonymous": False,
@@ -45,9 +67,27 @@ factory = w3.eth.contract(address=FACTORY, abi=FACTORY_ABI)
 # =========================
 
 TOKEN_ABI = [
-    {"constant":True,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"type":"function"},
-    {"constant":True,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"type":"function"},
-    {"constant":True,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"type":"function"}
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "name",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "totalSupply",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "type": "function",
+    },
 ]
 
 # =========================
@@ -127,56 +167,58 @@ def scan():
 
     print("🚀 BSC Token Scanner Started")
 
-    event_filter = factory.events.PairCreated.create_filter(fromBlock='latest')
+    event_filter = factory.events.PairCreated.create_filter(
+        fromBlock="latest"
+    )
 
     while True:
 
-        events = event_filter.get_new_entries()
+        try:
 
-        for event in events:
+            events = event_filter.get_new_entries()
 
-            token0 = event["args"]["token0"]
-            token1 = event["args"]["token1"]
-            pair = event["args"]["pair"]
+            for event in events:
 
-            if token0 == WBNB or token1 == WBNB:
+                token0 = event["args"]["token0"]
+                token1 = event["args"]["token1"]
+                pair = event["args"]["pair"]
 
-                token = token0 if token1 == WBNB else token1
-                base = "WBNB"
+                if token0 == WBNB or token1 == WBNB:
 
-            elif token0 == USDT or token1 == USDT:
+                    token = token0 if token1 == WBNB else token1
 
-                token = token0 if token1 == USDT else token1
-                base = "USDT"
+                elif token0 == USDT or token1 == USDT:
 
-            else:
-                continue
+                    token = token0 if token1 == USDT else token1
 
-            name, symbol, supply = get_token_info(token)
+                else:
+                    continue
 
-            liquidity, price, marketcap = get_dex_data(pair)
+                name, symbol, supply = get_token_info(token)
 
-            if liquidity < MIN_LIQUIDITY_USD:
-                continue
+                liquidity, price, marketcap = get_dex_data(pair)
 
-            if marketcap < MIN_MARKETCAP_USD:
-                continue
+                if liquidity < MIN_LIQUIDITY_USD:
+                    continue
 
-            dev_wallet, dev_balance = get_dev_wallet(token)
+                if marketcap < MIN_MARKETCAP_USD:
+                    continue
 
-            message = f"""
+                dev_wallet, dev_balance = get_dev_wallet(token)
+
+                message = f"""
 🚀 <b>NEW BSC TOKEN DETECTED</b>
 
 Token: {name} ({symbol})
 
-📄 Contract:
+📄 Contract
 {token}
 
 💰 Liquidity: ${liquidity:,.0f}
 💵 Price: ${price}
 📊 Market Cap: ${marketcap:,.0f}
 
-👤 Dev Wallet:
+👤 Dev Wallet
 {dev_wallet}
 
 📈 Chart
@@ -184,16 +226,25 @@ https://dexscreener.com/bsc/{pair}
 
 💰 Buy
 https://pancakeswap.finance/swap?outputCurrency={token}
-
-🔎 BscScan
-https://bscscan.com/token/{token}
 """
 
-            print(message)
-            send_telegram(message)
+                send_telegram(message)
 
-        time.sleep(2)
+                print("New token detected:", symbol)
 
+        except Exception as e:
+            print("Error:", e)
+
+        time.sleep(5)
+
+
+# =========================
+# START BOT
+# =========================
 
 if __name__ == "__main__":
+
+    web_thread = threading.Thread(target=run_web)
+    web_thread.start()
+
     scan()
